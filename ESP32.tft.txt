@@ -1,0 +1,81 @@
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+// Unique UUIDs for the Service and Characteristic (Generated for this example)
+#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a1"
+
+BLECharacteristic *pCharacteristic;
+bool deviceConnected = false;
+
+// Callback to track if a browser/device is connected
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnected(BLEServer* pServer) {
+        deviceConnected = true;
+        Serial.println("Device connected!");
+    }
+    void onDisconnected(BLEServer* pServer) {
+        deviceConnected = false;
+        Serial.println("Device disconnected. Restarting advertising...");
+        pServer->startAdvertising(); // Restart advertising so it can be found again
+    }
+};
+
+void setup() {
+    Serial.begin(115200);
+
+    // Initialize BLE Device with a name that will show up in the browser
+    BLEDevice::init("ESP32_Sensor");
+
+    // Create BLE Server
+    BLEServer *pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+
+    // Create BLE Service
+    BLEService *pService = pServer->createService(SERVICE_UUID);
+
+    // Create BLE Characteristic for Read and Notify
+    pCharacteristic = pService->createCharacteristic(
+                        CHARACTERISTIC_UUID,
+                        BLECharacteristic::READ |
+                        BLECharacteristic::NOTIFY
+                      );
+    
+    // Add Descriptor required for notifications
+    pCharacteristic->addDescriptor(new BLE2902());
+
+    // Start the service
+    pService->start();
+
+    // Start advertising
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->setMinPreferred(0x06); 
+    BLEDevice::startAdvertising();
+    
+    Serial.println("ESP32 BLE Server is ready and advertising...");
+}
+
+void loop() {
+    if (deviceConnected) {
+        // In a real project, replace these with actual sensor readings (e.g., from DHT.readTemperature())
+        float temperature = 24.5;
+        float humidity = 60.0;
+
+        // Combine data into a single string format: "temp,humidity"
+        String payload = String(temperature) + "," + String(humidity);
+
+        // Set value and notify the connected browser
+        pCharacteristic->setValue(payload.c_str());
+        pCharacteristic->notify();
+        
+        Serial.print("Sent to Web: ");
+        Serial.println(payload);
+    }
+    
+    // Send update every 2 seconds
+    delay(2000);
+}
